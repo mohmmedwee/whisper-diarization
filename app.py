@@ -33,6 +33,21 @@ celery_app = Celery(
     backend=settings.CELERY_RESULT_BACKEND
 )
 
+# Celery configuration
+celery_app.conf.update(
+    result_expires=3600,  # Results expire in 1 hour
+    task_serializer='json',
+    accept_content=['json'],
+    result_serializer='json',
+    timezone='UTC',
+    enable_utc=True,
+    task_track_started=True,
+    task_time_limit=30 * 60,  # 30 minutes
+    task_soft_time_limit=25 * 60,  # 25 minutes
+    worker_prefetch_multiplier=1,
+    worker_max_tasks_per_child=1000,
+)
+
 # Pydantic models
 class DiarizationRequest(BaseModel):
     audio_file: str
@@ -179,40 +194,49 @@ async def get_task_status(task_id: str):
     task_info = task_results[task_id]
     celery_task_id = task_info['celery_task_id']
     
-    # Get Celery task status
-    task = celery_app.AsyncResult(celery_task_id)
-    
-    if task.state == 'PENDING':
-        status = 'PENDING'
-        result = None
-        error = None
-    elif task.state == 'PROGRESS':
-        status = 'PROCESSING'
-        result = task.info
-        error = None
-    elif task.state == 'SUCCESS':
-        status = 'COMPLETED'
-        result = task.result
-        error = None
-        # Update local status
-        task_results[task_id]['status'] = 'COMPLETED'
-    elif task.state == 'FAILURE':
-        status = 'FAILED'
-        result = None
-        error = str(task.info)
-        # Update local status
-        task_results[task_id]['status'] = 'FAILED'
-    else:
-        status = 'UNKNOWN'
-        result = None
-        error = None
-    
-    return TaskStatus(
-        task_id=task_id,
-        status=status,
-        result=result,
-        error=error
-    )
+    try:
+        # Get Celery task status
+        task = celery_app.AsyncResult(celery_task_id)
+        
+        if task.state == 'PENDING':
+            status = 'PENDING'
+            result = None
+            error = None
+        elif task.state == 'PROGRESS':
+            status = 'PROCESSING'
+            result = task.info
+            error = None
+        elif task.state == 'SUCCESS':
+            status = 'COMPLETED'
+            result = task.result
+            error = None
+            # Update local status
+            task_results[task_id]['status'] = 'COMPLETED'
+        elif task.state == 'FAILURE':
+            status = 'FAILED'
+            result = None
+            error = str(task.info) if task.info else "Task failed"
+            # Update local status
+            task_results[task_id]['status'] = 'FAILED'
+        else:
+            status = 'UNKNOWN'
+            result = None
+            error = None
+        
+        return TaskStatus(
+            task_id=task_id,
+            status=status,
+            result=result,
+            error=error
+        )
+    except Exception as e:
+        logger.error(f"Error getting task status for {task_id}: {str(e)}")
+        return TaskStatus(
+            task_id=task_id,
+            status='ERROR',
+            result=None,
+            error=f"Failed to get task status: {str(e)}"
+        )
 
 @app.get("/download/{task_id}")
 async def download_results(task_id: str):
@@ -273,7 +297,27 @@ async def cleanup_task(task_id: str):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "service": "whisper-diarization-api"}
+    try:
+        # Check if Redis is accessible
+        redis_healthy = False
+        try:
+            celery_app.control.inspect().active()
+            redis_healthy = True
+        except Exception:
+            redis_healthy = False
+        
+        return {
+            "status": "healthy" if redis_healthy else "degraded",
+            "service": "whisper-diarization-api",
+            "redis": "connected" if redis_healthy else "disconnected",
+            "celery": "available" if redis_healthy else "unavailable"
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "service": "whisper-diarization-api",
+            "error": str(e)
+        }
 
 @app.get("/models")
 async def get_models():
