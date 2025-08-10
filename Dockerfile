@@ -1,5 +1,5 @@
 # Use CUDA base image with CUDNN for GPU support with Ubuntu 22.04
-FROM nvidia/cuda:12.4.0-cudnn8-devel-ubuntu22.04
+FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -51,6 +51,14 @@ RUN apt-get update && apt-get install -y \
     libvorbis-dev \
     libtheora-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Install CUDNN manually
+RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v8.9.7/local_installers/cudnn-local-repo-ubuntu2204-8.9.7.29_1.0-1_amd64.deb && \
+    dpkg -i cudnn-local-repo-ubuntu2204-8.9.7.29_1.0-1_amd64.deb && \
+    apt-get update && \
+    apt-get install -y libcudnn8 && \
+    rm cudnn-local-repo-ubuntu2204-8.9.7.29_1.0-1_amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 # Create symbolic link for python
 RUN ln -s /usr/bin/python3.10 /usr/bin/python
