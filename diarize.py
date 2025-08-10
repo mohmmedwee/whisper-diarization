@@ -330,13 +330,7 @@ def main():
 
     args = parser.parse_args()
     
-    # Validate whisper model
-    available_models = settings.get_available_models()
-    if args.whisper_model not in available_models:
-        print(f"Warning: '{args.whisper_model}' is not in the list of available models.")
-        print(f"Available models: {', '.join(available_models)}")
-        print(f"Using default model: {settings.DEFAULT_WHISPER_MODEL}")
-        args.whisper_model = settings.DEFAULT_WHISPER_MODEL
+
     
     # Create output directory based on input file name
     output_dir = os.path.splitext(args.audio)[0]
