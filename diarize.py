@@ -7,20 +7,9 @@ import faster_whisper
 import torch
 import torchaudio
 
-# Try to import advanced packages, fallback to basic functionality if not available
-try:
-    from ctc_forced_aligner import (
-        generate_emissions,
-        get_alignments,
-        get_spans,
-        load_alignment_model,
-        postprocess_results,
-        preprocess_text,
-    )
-    CTC_AVAILABLE = True
-except ImportError:
-    CTC_AVAILABLE = False
-    logging.warning("ctc_forced_aligner not available, forced alignment will be disabled")
+# Note: ctc_forced_aligner is currently disabled due to import compatibility issues
+CTC_AVAILABLE = False
+logging.warning("ctc_forced_aligner disabled due to import compatibility issues, using fallback forced alignment")
 
 try:
     from deepmultilingualpunctuation import PunctuationModel
@@ -149,37 +138,23 @@ def process_audio_file(
 
         # Forced Alignment
         if CTC_AVAILABLE:
-            alignment_model, alignment_tokenizer = load_alignment_model(
-                device,
-                dtype=torch.float16 if device == "cuda" else torch.float32,
-            )
-
-            emissions, stride = generate_emissions(
-                alignment_model,
-                torch.from_numpy(audio_waveform)
-                .to(alignment_model.dtype)
-                .to(alignment_model.device),
-                batch_size=batch_size,
-            )
-
-            del alignment_model
-            torch.cuda.empty_cache()
-
-            tokens_starred, text_starred = preprocess_text(
-                full_transcript,
-                romanize=True,
-                language=langs_to_iso[info.language],
-            )
-
-            segments, scores, blank_token = get_alignments(
-                emissions,
-                tokens_starred,
-                alignment_tokenizer,
-            )
-
-            spans = get_spans(tokens_starred, segments, blank_token)
-
-            word_timestamps = postprocess_results(text_starred, spans, stride, scores)
+            # This block is now effectively disabled as ctc_forced_aligner is not imported
+            # The fallback logic below will be executed instead.
+            logging.info("ctc_forced_aligner is disabled, using fallback word-level timestamp approximation.")
+            word_timestamps = []
+            current_time = 0
+            for segment in transcript_segments:
+                segment_duration = segment.end - segment.start
+                words = segment.text.strip().split()
+                if words:
+                    word_duration = segment_duration / len(words)
+                    for word in words:
+                        word_timestamps.append({
+                            "word": word,
+                            "start": current_time,
+                            "end": current_time + word_duration
+                        })
+                        current_time += word_duration
         else:
             # Fallback: create simple word-level timestamp approximation
             logging.info("Using fallback word-level timestamp approximation")
