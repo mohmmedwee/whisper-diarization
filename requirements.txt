@@ -15,10 +15,8 @@ nltk==3.8.1
 omegaconf==2.3.0
 wget==3.2
 numpy
-Cython==0.29.34
+Cython==0.29.24
 scipy==1.10.0
 scikit-learn==1.2.2
 scikit-image==0.19.3
 scikit-video==1.1.11
-scikit-video==1.1.11
-
