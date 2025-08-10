@@ -51,7 +51,7 @@ def process_audio_file(
     language: str = None,
     whisper_model: str = "large-v3",
     batch_size: int = 8,
-    device: str = "cpu",
+    device: str = "cuda",
     stemming: bool = True,
     suppress_numerals: bool = False
 ):

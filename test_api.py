@@ -40,7 +40,7 @@ def test_upload(audio_file_path):
             data = {
                 'language': 'en',
                 'whisper_model': 'large-v3',  # Use latest and best model
-                'device': 'cpu'
+                'device': 'cuda'
             }
             
             response = requests.post(f"{API_BASE}/upload", files=files, data=data)

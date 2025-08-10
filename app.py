@@ -39,7 +39,7 @@ class DiarizationRequest(BaseModel):
     language: Optional[str] = None
     whisper_model: str = "large-v3"     
     batch_size: int = 8
-    device: str = "cpu"
+    device: str = "cuda"
     stemming: bool = True
     suppress_numerals: bool = False
 
@@ -116,7 +116,7 @@ async def upload_audio(
     language: Optional[str] = None,
     whisper_model: str = "large-v3",
     batch_size: int = 8,
-    device: str = "cpu",
+    device: str = "cuda",
     stemming: bool = True,
     suppress_numerals: bool = False
 ):

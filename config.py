@@ -25,7 +25,7 @@ class Settings:
     # Model Configuration
     DEFAULT_WHISPER_MODEL: str = os.getenv("DEFAULT_WHISPER_MODEL", "large-v3")
     DEFAULT_BATCH_SIZE: int = int(os.getenv("DEFAULT_BATCH_SIZE", "8"))
-    DEFAULT_DEVICE: str = os.getenv("DEFAULT_DEVICE", "cpu")
+    DEFAULT_DEVICE: str = os.getenv("DEFAULT_DEVICE", "cuda")
     
     # Whisper Model Sizes and Configurations
     WHISPER_MODELS = {
