@@ -7,15 +7,15 @@ import faster_whisper
 import torch
 import torchaudio
 
-from ctc_forced_aligner import (
-    generate_emissions,
-    get_alignments,
-    get_spans,
-    load_alignment_model,
-    postprocess_results,
-    preprocess_text,
-)
-from deepmultilingualpunctuation import PunctuationModel
+# from ctc_forced_aligner import (
+#     generate_emissions,
+#     get_alignments,
+#     get_spans,
+#     load_alignment_model,
+#     postprocess_results,
+#     preprocess_text,
+# )
+# from deepmultilingualpunctuation import PunctuationModel
 from nemo.collections.asr.models.msdd_models import NeuralDiarizer
 
 from helpers import (
@@ -57,29 +57,29 @@ def process_audio_file(
         batch_size: Batch size for processing
         device: Device to use (cpu/cuda)
         stemming: Whether to perform source separation
-        suppress_numerals: Whether to suppress numerical digits
-    
-    Returns:
-        dict: Results containing transcript and file paths
-    """
-    pid = os.getpid()
-    temp_outputs_dir = f"temp_outputs_{pid}"
-    
-    try:
-        # Process language argument
-        language = process_language_arg(language, whisper_model)
-        
-        if stemming:
-            # Isolate vocals from the rest of the audio
-            return_code = os.system(
-                f'python -m demucs.separate -n htdemucs --two-stems=vocals "{audio_file}" -o "{temp_outputs_dir}" --device "{device}"'
-            )
-
-            if return_code != 0:
-                logging.warning(
-                    "Source splitting failed, using original audio file. "
+#         suppress_numerals: Whether to suppress numerical digits
+#     
+#     Returns:
+#         dict: Results containing transcript and file paths
+#     """
+#     pid = os.getpid()
+#     temp_outputs_dir = f"temp_outputs_{pid}"
+#     
+#     try:
+#         # Process language argument
+#         language = process_language_arg(language, whisper_model)
+#         
+#         if stemming:
+#             # Isolate vocals from the rest of the audio
+#             return_code = os.system(
+#                 f'python -m demucs.separate -n htdemucs --two-stems=vocals "{audio_file}" -o "{temp_outputs_dir}" --device "{device}"'
+#             )
+# 
+#             if return_code != 0:
+#                 logging.warning(
+#                     "Source splitting failed, using original audio file. "
                     "Use --no-stem argument to disable it."
-                )
+        vocal_target = audio_file                )
                 vocal_target = audio_file
             else:
                 vocal_target = os.path.join(
