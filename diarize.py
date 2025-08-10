@@ -7,15 +7,35 @@ import faster_whisper
 import torch
 import torchaudio
 
-from ctc_forced_aligner import (
-    generate_emissions,
-    get_alignments,
-    get_spans,
-    load_alignment_model,
-    postprocess_results,
-    preprocess_text,
-)
-from deepmultilingualpunctuation import PunctuationModel
+# Try to import advanced packages, fallback to basic functionality if not available
+try:
+    from ctc_forced_aligner import (
+        generate_emissions,
+        get_alignments,
+        get_spans,
+        load_alignment_model,
+        postprocess_results,
+        preprocess_text,
+    )
+    CTC_AVAILABLE = True
+except ImportError:
+    CTC_AVAILABLE = False
+    logging.warning("ctc_forced_aligner not available, forced alignment will be disabled")
+
+try:
+    from deepmultilingualpunctuation import PunctuationModel
+    PUNCT_AVAILABLE = True
+except ImportError:
+    PUNCT_AVAILABLE = False
+    logging.warning("deepmultilingualpunctuation not available, punctuation restoration will be disabled")
+
+try:
+    import demucs
+    DEMUCS_AVAILABLE = True
+except ImportError:
+    DEMUCS_AVAILABLE = False
+    logging.warning("demucs not available, source separation will be disabled")
+
 from nemo.collections.asr.models.msdd_models import NeuralDiarizer
 
 from helpers import (
@@ -70,7 +90,7 @@ def process_audio_file(
         language = process_language_arg(language, whisper_model)
         
         # Source separation (stemming)
-        if stemming:
+        if stemming and DEMUCS_AVAILABLE:
             # Isolate vocals from the rest of the audio
             return_code = os.system(
                 f'python -m demucs.separate -n htdemucs --two-stems=vocals "{audio_file}" -o "{temp_outputs_dir}" --device "{device}"'
@@ -90,6 +110,8 @@ def process_audio_file(
                     "vocals.wav",
                 )
         else:
+            if stemming and not DEMUCS_AVAILABLE:
+                logging.warning("Source separation requested but demucs not available, using original audio")
             vocal_target = audio_file
 
         # Transcribe the audio file
@@ -126,37 +148,55 @@ def process_audio_file(
         torch.cuda.empty_cache()
 
         # Forced Alignment
-        alignment_model, alignment_tokenizer = load_alignment_model(
-            device,
-            dtype=torch.float16 if device == "cuda" else torch.float32,
-        )
+        if CTC_AVAILABLE:
+            alignment_model, alignment_tokenizer = load_alignment_model(
+                device,
+                dtype=torch.float16 if device == "cuda" else torch.float32,
+            )
 
-        emissions, stride = generate_emissions(
-            alignment_model,
-            torch.from_numpy(audio_waveform)
-            .to(alignment_model.dtype)
-            .to(alignment_model.device),
-            batch_size=batch_size,
-        )
+            emissions, stride = generate_emissions(
+                alignment_model,
+                torch.from_numpy(audio_waveform)
+                .to(alignment_model.dtype)
+                .to(alignment_model.device),
+                batch_size=batch_size,
+            )
 
-        del alignment_model
-        torch.cuda.empty_cache()
+            del alignment_model
+            torch.cuda.empty_cache()
 
-        tokens_starred, text_starred = preprocess_text(
-            full_transcript,
-            romanize=True,
-            language=langs_to_iso[info.language],
-        )
+            tokens_starred, text_starred = preprocess_text(
+                full_transcript,
+                romanize=True,
+                language=langs_to_iso[info.language],
+            )
 
-        segments, scores, blank_token = get_alignments(
-            emissions,
-            tokens_starred,
-            alignment_tokenizer,
-        )
+            segments, scores, blank_token = get_alignments(
+                emissions,
+                tokens_starred,
+                alignment_tokenizer,
+            )
 
-        spans = get_spans(tokens_starred, segments, blank_token)
+            spans = get_spans(tokens_starred, segments, blank_token)
 
-        word_timestamps = postprocess_results(text_starred, spans, stride, scores)
+            word_timestamps = postprocess_results(text_starred, spans, stride, scores)
+        else:
+            # Fallback: create simple word-level timestamp approximation
+            logging.info("Using fallback word-level timestamp approximation")
+            word_timestamps = []
+            current_time = 0
+            for segment in transcript_segments:
+                segment_duration = segment.end - segment.start
+                words = segment.text.strip().split()
+                if words:
+                    word_duration = segment_duration / len(words)
+                    for word in words:
+                        word_timestamps.append({
+                            "word": word,
+                            "start": current_time,
+                            "end": current_time + word_duration
+                        })
+                        current_time += word_duration
 
         # convert audio to mono for NeMo compatibility
         ROOT = os.getcwd()
@@ -189,7 +229,7 @@ def process_audio_file(
         wsm = get_words_speaker_mapping(word_timestamps, speaker_ts, "start")
 
         # Punctuation restoration
-        if info.language in punct_model_langs:
+        if info.language in punct_model_langs and PUNCT_AVAILABLE:
             # restoring punctuation in the transcript to help realign the sentences
             punct_model = PunctuationModel(model="kredor/punctuate-all")
 
@@ -214,12 +254,16 @@ def process_audio_file(
                     if word.endswith(".."):
                         word = word.rstrip(".")
                     word_dict["word"] = word
-
         else:
-            logging.warning(
-                f"Punctuation restoration is not available for {info.language} language."
-                " Using the original punctuation."
-            )
+            if info.language in punct_model_langs and not PUNCT_AVAILABLE:
+                logging.warning(
+                    f"Punctuation restoration is available for {info.language} but package not available."
+                )
+            else:
+                logging.warning(
+                    f"Punctuation restoration is not available for {info.language} language."
+                    " Using the original punctuation."
+                )
 
         wsm = get_realigned_ws_mapping_with_punctuation(wsm)
         ssm = get_sentences_speaker_mapping(wsm, speaker_ts)
