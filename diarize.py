@@ -207,32 +207,68 @@ def process_audio_file(
             logging.warning(f"Failed to get suppress tokens: {e}, using default")
             suppress_tokens = [-1]
 
-        # Transcribe with fallback logic
-        if batch_size > 0 and whisper_pipeline is not None:
+        # Transcribe with comprehensive fallback logic
+        transcript_segments = None
+        info = None
+        
+        # Try GPU processing first
+        if device == "cuda" and batch_size > 0 and whisper_pipeline is not None:
             try:
-                logging.info(f"Using batched inference with batch_size={batch_size}")
+                logging.info(f"🔄 Attempting GPU batched inference with batch_size={batch_size}")
                 transcript_segments, info = whisper_pipeline.transcribe(
                     audio_waveform,
                     language,
                     suppress_tokens=suppress_tokens,
                     batch_size=batch_size,
                 )
+                logging.info("✅ GPU batched inference completed successfully")
             except Exception as e:
-                logging.warning(f"Batched inference failed: {e}, falling back to single inference")
+                logging.warning(f"⚠️ GPU batched inference failed: {e}")
+                transcript_segments = None
+                info = None
+        
+        # Fallback to GPU single inference
+        if transcript_segments is None and device == "cuda":
+            try:
+                logging.info("🔄 Attempting GPU single inference")
                 transcript_segments, info = whisper_model_instance.transcribe(
                     audio_waveform,
                     language,
                     suppress_tokens=suppress_tokens,
                     vad_filter=True,
                 )
-        else:
-            logging.info("Using single inference (no batching)")
-            transcript_segments, info = whisper_model_instance.transcribe(
-                audio_waveform,
-                language,
-                suppress_tokens=suppress_tokens,
-                vad_filter=True,
-            )
+                logging.info("✅ GPU single inference completed successfully")
+            except Exception as e:
+                logging.warning(f"⚠️ GPU single inference failed: {e}")
+                transcript_segments = None
+                info = None
+        
+        # Final fallback to CPU
+        if transcript_segments is None:
+            try:
+                logging.info("🔄 Falling back to CPU processing")
+                # Move model to CPU temporarily
+                whisper_model_instance = whisper_model_instance.cpu()
+                audio_waveform_cpu = audio_waveform.cpu() if hasattr(audio_waveform, 'cpu') else audio_waveform
+                
+                transcript_segments, info = whisper_model_instance.transcribe(
+                    audio_waveform_cpu,
+                    language,
+                    suppress_tokens=suppress_tokens,
+                    vad_filter=True,
+                )
+                logging.info("✅ CPU inference completed successfully")
+                
+                # Move model back to GPU if needed
+                if device == "cuda":
+                    whisper_model_instance = whisper_model_instance.cuda()
+                    
+            except Exception as e:
+                logging.error(f"❌ All inference methods failed: {e}")
+                raise RuntimeError(f"Failed to transcribe audio: {e}")
+        
+        if transcript_segments is None:
+            raise RuntimeError("No transcription result obtained from any method")
 
         full_transcript = "".join(segment.text for segment in transcript_segments)
 
@@ -322,13 +358,24 @@ def process_audio_file(
 
         # Reading timestamps <> Speaker Labels mapping
         speaker_ts = []
-        with open(os.path.join(temp_path, "pred_rttms", "mono_file.rttm"), "r") as f:
-            lines = f.readlines()
-            for line in lines:
-                line_list = line.split(" ")
-                s = int(float(line_list[5]) * 1000)
-                e = s + int(float(line_list[8]) * 1000)
-                speaker_ts.append([s, e, int(line_list[11].split("_")[-1])])
+        if msdd_model is not None:
+            try:
+                with open(os.path.join(temp_path, "pred_rttms", "mono_file.rttm"), "r") as f:
+                    lines = f.readlines()
+                    for line in lines:
+                        line_list = line.split(" ")
+                        s = int(float(line_list[5]) * 1000)
+                        e = s + int(float(line_list[8]) * 1000)
+                        speaker_ts.append([s, e, int(line_list[11].split("_")[-1])])
+                logging.info("✅ Speaker timestamps loaded successfully")
+            except Exception as e:
+                logging.warning(f"⚠️ Failed to read speaker timestamps: {e}")
+                speaker_ts = []
+        else:
+            logging.info("ℹ️ No diarization results available, creating single speaker mapping")
+            # Create a single speaker for the entire audio
+            audio_duration_ms = int(len(audio_waveform) / 16000 * 1000)  # Assuming 16kHz sample rate
+            speaker_ts = [[0, audio_duration_ms, 0]]
 
         wsm = get_words_speaker_mapping(word_timestamps, speaker_ts, "start")
 
@@ -379,11 +426,21 @@ def process_audio_file(
         output_txt = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(audio_file))[0]}.txt")
         output_srt = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(audio_file))[0]}.srt")
         
-        with open(output_txt, "w", encoding="utf-8-sig") as f:
-            get_speaker_aware_transcript(ssm, f)
-
-        with open(output_srt, "w", encoding="utf-8-sig") as srt:
-            write_srt(ssm, srt)
+        try:
+            with open(output_txt, "w", encoding="utf-8-sig") as f:
+                get_speaker_aware_transcript(ssm, f)
+            logging.info("✅ Transcript saved to TXT file")
+        except Exception as e:
+            logging.error(f"❌ Failed to save TXT file: {e}")
+            raise
+        
+        try:
+            with open(output_srt, "w", encoding="utf-8-sig") as srt:
+                write_srt(ssm, srt)
+            logging.info("✅ Transcript saved to SRT file")
+        except Exception as e:
+            logging.error(f"❌ Failed to save SRT file: {e}")
+            raise
 
         cleanup(temp_path)
         
