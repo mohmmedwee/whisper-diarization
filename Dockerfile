@@ -41,8 +41,6 @@ RUN apt-get update && apt-get install -y \
     libopus-dev \
     libvorbis-dev \
     libtheora-dev \
-    libxvid-dev \
-    libxvidcore-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic link for python
