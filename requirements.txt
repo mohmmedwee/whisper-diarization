@@ -14,7 +14,7 @@ demucs==4.0.0
 nltk==3.8.1
 omegaconf>=2.2,<2.3
 wget==3.2
-numpy
+numpy==1.24.3
 Cython==0.29.24
 scipy==1.10.0
 scikit-learn==1.2.2
