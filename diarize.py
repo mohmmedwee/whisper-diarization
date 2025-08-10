@@ -7,9 +7,23 @@ import faster_whisper
 import torch
 import torchaudio
 
-# Note: ctc_forced_aligner is currently disabled due to import compatibility issues
-CTC_AVAILABLE = False
-logging.warning("ctc_forced_aligner disabled due to import compatibility issues, using fallback forced alignment")
+# Try to import ctc_forced_aligner with proper error handling
+try:
+    from ctc_forced_aligner import (
+        CTCForcedAligner,
+        CTCForcedAlignerConfig,
+        CTCForcedAlignerConfigBuilder
+    )
+    CTC_AVAILABLE = True
+    logging.info("✅ ctc_forced_aligner imported successfully")
+except ImportError as e:
+    CTC_AVAILABLE = False
+    logging.warning(f"⚠️ ctc_forced_aligner import failed: {e}")
+    logging.info("ℹ️ Using fallback forced alignment method")
+except Exception as e:
+    CTC_AVAILABLE = False
+    logging.warning(f"⚠️ ctc_forced_aligner initialization failed: {e}")
+    logging.info("ℹ️ Using fallback forced alignment method")
 
 try:
     from deepmultilingualpunctuation import PunctuationModel
@@ -292,28 +306,31 @@ def process_audio_file(
         else:
             logging.info("ℹ️ Running on CPU, no GPU memory to clear")
 
-        # Forced Alignment
+        # Forced Alignment with ctc_forced_aligner or fallback
         if CTC_AVAILABLE:
-            # This block is now effectively disabled as ctc_forced_aligner is not imported
-            # The fallback logic below will be executed instead.
-            logging.info("ctc_forced_aligner is disabled, using fallback word-level timestamp approximation.")
-            word_timestamps = []
-            current_time = 0
-            for segment in transcript_segments:
-                segment_duration = segment.end - segment.start
-                words = segment.text.strip().split()
-                if words:
-                    word_duration = segment_duration / len(words)
-                    for word in words:
-                        word_timestamps.append({
-                            "word": word,
-                            "start": current_time,
-                            "end": current_time + word_duration
-                        })
-                        current_time += word_duration
-        else:
-            # Fallback: create simple word-level timestamp approximation
-            logging.info("Using fallback word-level timestamp approximation")
+            try:
+                logging.info("🔄 Using ctc_forced_aligner for precise word-level timestamps")
+                
+                # Create CTC forced aligner configuration
+                config = CTCForcedAlignerConfigBuilder().build()
+                aligner = CTCForcedAligner(config)
+                
+                # Perform forced alignment
+                word_timestamps = aligner.align(
+                    audio_waveform,
+                    transcript_segments,
+                    language=info.language if hasattr(info, 'language') else 'en'
+                )
+                
+                logging.info("✅ CTC forced alignment completed successfully")
+                
+            except Exception as e:
+                logging.warning(f"⚠️ CTC forced alignment failed: {e}, using fallback method")
+                CTC_AVAILABLE = False
+        
+        # Fallback: create simple word-level timestamp approximation
+        if not CTC_AVAILABLE:
+            logging.info("ℹ️ Using fallback word-level timestamp approximation")
             word_timestamps = []
             current_time = 0
             for segment in transcript_segments:

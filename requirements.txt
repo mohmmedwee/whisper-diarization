@@ -10,4 +10,6 @@ nltk
 faster-whisper>=1.1.0
 git+https://github.com/MahmoudAshraf97/demucs.git
 git+https://github.com/oliverguhr/deepmultilingualpunctuation.git
+# Try the main repository first, fallback to a more compatible version if needed
 git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git@main
+# Alternative: git+https://github.com/ynop/ctc-forced-aligner.git@main
