@@ -52,9 +52,6 @@ COPY . .
 # Create necessary directories for uploads and outputs
 RUN mkdir -p uploads outputs temp_outputs
 
-# Health check to ensure application is running
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the application with Uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
