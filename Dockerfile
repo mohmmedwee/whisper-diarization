@@ -1,5 +1,5 @@
-# Use CUDA base image for GPU support with Ubuntu 22.04
-FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
+# Use CUDA base image with CUDNN for GPU support with Ubuntu 22.04
+FROM nvidia/cuda:12.4.0-cudnn8-devel-ubuntu22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -7,6 +7,13 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV CUDA_VISIBLE_DEVICES=0
 ENV NVIDIA_VISIBLE_DEVICES=all
+ENV CUDNN_LIBRARY=/usr/local/cuda/lib64
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cudnn/lib64:$LD_LIBRARY_PATH
+ENV CUDNN_ROOT=/usr/local/cudnn
+ENV CUDNN_INCLUDE_DIR=/usr/local/cudnn/include
+ENV CUDNN_LIBRARY_DIR=/usr/local/cudnn/lib64
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+ENV CUDA_LAUNCH_BLOCKING=1
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -48,6 +55,11 @@ RUN apt-get update && apt-get install -y \
 # Create symbolic link for python
 RUN ln -s /usr/bin/python3.10 /usr/bin/python
 RUN pip install --no-cache-dir Cython numpy
+
+# Verify CUDNN installation and create symlinks
+RUN ls -la /usr/local/cudnn* || echo "CUDNN not found in expected location"
+RUN find /usr/local -name "*cudnn*" -type f | head -10 || echo "No CUDNN files found"
+RUN ldconfig
 # Set working directory
 WORKDIR /app
 
@@ -76,6 +88,9 @@ EXPOSE 8000
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
+
+# Test CUDA/CUDNN availability
+RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'CUDNN version: {torch.backends.cudnn.version()}')" || echo "CUDA test failed"
 
 # Run the application
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

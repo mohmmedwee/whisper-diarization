@@ -4,7 +4,7 @@ import logging
 from typing import Optional, List
 from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import uvicorn
@@ -129,15 +129,16 @@ def process_audio_task(self, audio_file_path: str, output_dir: str, **kwargs):
         # Let Celery handle the exception properly
         raise
 
-@app.post("/upload", response_model=DiarizationResponse)
+@app.post("/upload", response_model=DiarizationResponse, 
+          summary="Upload Audio for Diarization",
+          description="Upload an audio file to start the transcription and speaker diarization process. The system will automatically use optimal settings for best performance.")
 async def upload_audio(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
-    language: Optional[str] = None,
-    stemming: bool = True,
-    suppress_numerals: bool = False
+    file: UploadFile = File(..., description="Audio file to process (MP3, WAV, etc.)"),
+    language: Optional[str] = Form(None, description="Language code (e.g., 'en', 'es', 'fr'). If not specified, Whisper will auto-detect."),
+    stemming: bool = Form(True, description="Enable source separation to isolate different audio sources (speakers, music, etc.)"),
+    suppress_numerals: bool = Form(False, description="Convert numbers to written form (e.g., '123' becomes 'one hundred twenty three')")
 ):
-    """Upload audio file for diarization"""
     
     # Validate file type
     if not file.content_type or not file.content_type.startswith('audio/'):
@@ -186,9 +187,10 @@ async def upload_audio(
         message="Audio file uploaded and processing started"
     )
 
-@app.get("/status/{task_id}", response_model=TaskStatus)
+@app.get("/status/{task_id}", response_model=TaskStatus,
+         summary="Get Task Status",
+         description="Check the current status and progress of a diarization task")
 async def get_task_status(task_id: str):
-    """Get the status of a diarization task"""
     
     if task_id not in task_results:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -240,9 +242,10 @@ async def get_task_status(task_id: str):
             error=f"Failed to get task status: {str(e)}"
         )
 
-@app.get("/download/{task_id}")
+@app.get("/download/{task_id}",
+         summary="Download Results",
+         description="Download the transcription and diarization results for a completed task")
 async def download_results(task_id: str):
-    """Download the results of a completed task"""
     
     if task_id not in task_results:
         raise HTTPException(status_code=404, detail="Task not found")

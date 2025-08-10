@@ -55,6 +55,26 @@ def process_audio_file(
     stemming: bool = True,
     suppress_numerals: bool = False
 ):
+    # Check CUDA/CUDNN availability and fallback to CPU if needed
+    if device == "cuda":
+        try:
+            import torch
+            if not torch.cuda.is_available():
+                logging.warning("CUDA not available, falling back to CPU")
+                device = "cpu"
+            else:
+                # Test CUDNN
+                try:
+                    torch.backends.cudnn.version()
+                    logging.info("CUDNN is available")
+                except Exception as e:
+                    logging.warning(f"CUDNN error: {e}, falling back to CPU")
+                    device = "cpu"
+        except Exception as e:
+            logging.warning(f"CUDA check failed: {e}, falling back to CPU")
+            device = "cpu"
+    
+    logging.info(f"Using device: {device}")
     """
     Process audio file for transcription and diarization
     
@@ -80,24 +100,29 @@ def process_audio_file(
         
         # Source separation (stemming)
         if stemming and DEMUCS_AVAILABLE:
-            # Isolate vocals from the rest of the audio
-            return_code = os.system(
-                f'python -m demucs.separate -n htdemucs --two-stems=vocals "{audio_file}" -o "{temp_outputs_dir}" --device "{device}"'
-            )
+            try:
+                # Isolate vocals from the rest of the audio
+                logging.info(f"Starting source separation with device: {device}")
+                return_code = os.system(
+                    f'python -m demucs.separate -n htdemucs --two-stems=vocals "{audio_file}" -o "{temp_outputs_dir}" --device "{device}"'
+                )
 
-            if return_code != 0:
-                logging.warning(
-                    "Source splitting failed, using original audio file. "
-                    "Use --no-stem argument to disable it."
-                )
+                if return_code != 0:
+                    logging.warning(
+                        "Source splitting failed, using original audio file. "
+                        "Use --no-stem argument to disable it."
+                    )
+                    vocal_target = audio_file
+                else:
+                    vocal_target = os.path.join(
+                        temp_outputs_dir,
+                        "htdemucs",
+                        os.path.splitext(os.path.basename(audio_file))[0],
+                        "vocals.wav",
+                    )
+            except Exception as e:
+                logging.warning(f"Source separation error: {e}, using original audio file")
                 vocal_target = audio_file
-            else:
-                vocal_target = os.path.join(
-                    temp_outputs_dir,
-                    "htdemucs",
-                    os.path.splitext(os.path.basename(audio_file))[0],
-                    "vocals.wav",
-                )
         else:
             if stemming and not DEMUCS_AVAILABLE:
                 logging.warning("Source separation requested but demucs not available, using original audio")
@@ -134,7 +159,11 @@ def process_audio_file(
 
         # clear gpu vram
         del whisper_model_instance, whisper_pipeline
-        torch.cuda.empty_cache()
+        if device == "cuda" and torch.cuda.is_available():
+            try:
+                torch.cuda.empty_cache()
+            except Exception as e:
+                logging.warning(f"Failed to clear GPU cache: {e}")
 
         # Forced Alignment
         if CTC_AVAILABLE:
