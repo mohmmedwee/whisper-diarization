@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install system dependencies and clean up cache in a single RUN command
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3.10-dev \
@@ -14,44 +14,70 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     git \
     wget \
-    sox \
     curl \
     ffmpeg \
     libsndfile1 \
     libportaudio2 \
     portaudio19-dev \
+    build-essential \
+    cmake \
+    pkg-config \
+    libfftw3-dev \
+    libasound2-dev \
+    libsndfile1-dev \
+    libsamplerate0-dev \
+    libavcodec-dev \
+    libavformat-dev \
+    libavutil-dev \
+    libswresample-dev \
+    libavfilter-dev \
+    libavdevice-dev \
+    libpostproc-dev \
+    libswscale-dev \
+    libx264-dev \
+    libx265-dev \
+    libvpx-dev \
+    libmp3lame-dev \
+    libopus-dev \
+    libvorbis-dev \
+    libtheora-dev \
+    libxvid-dev \
+    libxvidcore-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and setuptools
-RUN python3.10 -m pip install --no-cache-dir --upgrade pip setuptools
-
-# Install Cython first for building dependencies
-RUN pip install --no-cache-dir Cython
+# Create symbolic link for python
+RUN ln -s /usr/bin/python3.10 /usr/bin/python
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements file first to leverage Docker cache
+# Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install PyTorch with CUDA version and other dependencies
+# Install PyTorch first (CUDA version)
 RUN pip install --no-cache-dir \
     torch==2.1.1+cu121 \
     torchaudio==2.1.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install the rest of the Python dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Download NLTK data
-RUN python3.10 -c "import nltk; nltk.download('punkt')"
+RUN python -c "import nltk; nltk.download('punkt')"
 
 # Copy application code
 COPY . .
 
-# Create necessary directories for uploads and outputs
+# Create necessary directories
 RUN mkdir -p uploads outputs temp_outputs
 
+# Expose port
+EXPOSE 8000
 
-# Run the application with Uvicorn
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
