@@ -221,7 +221,7 @@ def process_audio_file(
             logging.warning(f"Failed to get suppress tokens: {e}, using default")
             suppress_tokens = [-1]
 
-        # Transcribe with comprehensive fallback logic
+        # Transcribe with comprehensive fallback logic and CUDNN error detection
         transcript_segments = None
         info = None
         
@@ -237,11 +237,17 @@ def process_audio_file(
                 )
                 logging.info("✅ GPU batched inference completed successfully")
             except Exception as e:
-                logging.warning(f"⚠️ GPU batched inference failed: {e}")
+                error_msg = str(e).lower()
+                if "cudnn" in error_msg or "invalid handle" in error_msg or "signal 6" in error_msg:
+                    logging.warning(f"⚠️ CUDNN error detected: {e}")
+                    logging.info("🔄 Forcing CPU fallback due to CUDNN incompatibility")
+                    device = "cpu"  # Force CPU for all subsequent operations
+                else:
+                    logging.warning(f"⚠️ GPU batched inference failed: {e}")
                 transcript_segments = None
                 info = None
         
-        # Fallback to GPU single inference
+        # Fallback to GPU single inference (only if device is still cuda)
         if transcript_segments is None and device == "cuda":
             try:
                 logging.info("🔄 Attempting GPU single inference")
@@ -253,7 +259,13 @@ def process_audio_file(
                 )
                 logging.info("✅ GPU single inference completed successfully")
             except Exception as e:
-                logging.warning(f"⚠️ GPU single inference failed: {e}")
+                error_msg = str(e).lower()
+                if "cudnn" in error_msg or "invalid handle" in error_msg or "signal 6" in error_msg:
+                    logging.warning(f"⚠️ CUDNN error detected: {e}")
+                    logging.info("🔄 Forcing CPU fallback due to CUDNN incompatibility")
+                    device = "cpu"  # Force CPU for all subsequent operations
+                else:
+                    logging.warning(f"⚠️ GPU single inference failed: {e}")
                 transcript_segments = None
                 info = None
         
@@ -273,7 +285,7 @@ def process_audio_file(
                 )
                 logging.info("✅ CPU inference completed successfully")
                 
-                # Move model back to GPU if needed
+                # Move model back to GPU if needed (but only if CUDNN wasn't the issue)
                 if device == "cuda":
                     whisper_model_instance = whisper_model_instance.cuda()
                     
@@ -286,6 +298,28 @@ def process_audio_file(
 
         full_transcript = "".join(segment.text for segment in transcript_segments)
 
+        # Preemptive CUDNN compatibility check
+        if device == "cuda":
+            try:
+                logging.info("🔄 Testing CUDNN compatibility before transcription...")
+                # Test with a small tensor to see if CUDNN operations work
+                test_tensor = torch.randn(1, 1, 10, 10).cuda()
+                test_conv = torch.nn.Conv2d(1, 1, 3, padding=1).cuda()
+                test_output = test_conv(test_tensor)
+                del test_tensor, test_conv, test_output
+                logging.info("✅ CUDNN compatibility test passed")
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "cudnn" in error_msg or "invalid handle" in error_msg:
+                    logging.warning(f"⚠️ CUDNN compatibility test failed: {e}")
+                    logging.info("🔄 Switching to CPU due to CUDNN incompatibility")
+                    device = "cpu"
+                    # Move model to CPU
+                    whisper_model_instance = whisper_model_instance.cpu()
+                    audio_waveform = audio_waveform.cpu() if hasattr(audio_waveform, 'cpu') else audio_waveform
+                else:
+                    logging.warning(f"⚠️ GPU test failed: {e}")
+        
         # clear gpu vram
         try:
             if whisper_pipeline is not None:
