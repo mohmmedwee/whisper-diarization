@@ -54,8 +54,8 @@ COPY requirements.txt .
 
 # Install PyTorch first (CUDA version)
 RUN pip install --no-cache-dir \
-    torch==2.1.1+cu121 \
-    torchaudio==2.1.1+cu121 \
+    torch==2.0.1+cu121 \
+    torchaudio==2.0.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
 # Install Python dependencies
