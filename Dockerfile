@@ -1,5 +1,5 @@
-# Use CUDA base image for GPU support
-FROM nvidia/cuda:11.8.0-devel-ubuntu20.04
+# Use CUDA base image for GPU support with Ubuntu 22.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3.10-dev \
+    python3.10-distutils \
     python3-pip \
     git \
     wget \
@@ -31,9 +32,9 @@ COPY requirements.txt .
 
 # Install PyTorch first (CUDA version)
 RUN pip install --no-cache-dir \
-    torch==2.1.1+cu118 \
-    torchaudio==2.1.1+cu118 \
-    --index-url https://download.pytorch.org/whl/cu118
+    torch==2.1.1+cu121 \
+    torchaudio==2.1.1+cu121 \
+    --index-url https://download.pytorch.org/whl/cu121
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
