@@ -46,6 +46,13 @@ celery_app.conf.update(
     task_soft_time_limit=25 * 60,  # 25 minutes
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=1000,
+    result_backend_transport_options={
+        'retry_policy': {
+            'timeout': 5.0
+        }
+    },
+    task_ignore_result=False,
+    task_store_errors_even_if_ignored=True
 )
 
 # Pydantic models
@@ -120,8 +127,9 @@ def process_audio_task(self, audio_file_path: str, output_dir: str, **kwargs):
         }
         
     except Exception as e:
-        logger.error(f"Error processing audio: {str(e)}")
-        self.update_state(state='FAILURE', meta={'error': str(e)})
+        error_msg = str(e)
+        logger.error(f"Error processing audio: {error_msg}")
+        # Let Celery handle the exception properly
         raise
 
 @app.post("/upload", response_model=DiarizationResponse)
