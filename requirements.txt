@@ -20,10 +20,10 @@ scipy==1.10.0
 scikit-learn==1.2.2
 scikit-image==0.19.3
 scikit-video==1.1.11
-wget
-nemo_toolkit[asr]==2.0.0rc0
-nltk
-faster-whisper>=1.1.0
+huggingface_hub==0.16.4
+transformers==4.21.3
+torch==2.1.0
+torchaudio==2.1.0
 git+https://github.com/MahmoudAshraf97/demucs.git
 git+https://github.com/oliverguhr/deepmultilingualpunctuation.git
 git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git
