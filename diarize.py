@@ -32,6 +32,7 @@ from helpers import (
     whisper_langs,
     write_srt,
 )
+from config import settings
 
 mtypes = {"cpu": "int8", "cuda": "float16"}
 
@@ -275,9 +276,9 @@ def main():
 
     parser.add_argument(
         "--whisper-model",
-        dest="model_name",
+        dest="whisper_model",
         default="medium.en",
-        help="name of the Whisper model to use",
+        help="name of the Whisper model to use (e.g., tiny, base, small, medium, large)",
     )
 
     parser.add_argument(
@@ -306,6 +307,14 @@ def main():
 
     args = parser.parse_args()
     
+    # Validate whisper model
+    available_models = settings.get_available_models()
+    if args.whisper_model not in available_models:
+        print(f"Warning: '{args.whisper_model}' is not in the list of available models.")
+        print(f"Available models: {', '.join(available_models)}")
+        print(f"Using default model: {settings.DEFAULT_WHISPER_MODEL}")
+        args.whisper_model = settings.DEFAULT_WHISPER_MODEL
+    
     # Create output directory based on input file name
     output_dir = os.path.splitext(args.audio)[0]
     
@@ -314,7 +323,7 @@ def main():
         audio_file=args.audio,
         output_dir=output_dir,
         language=args.language,
-        whisper_model=args.model_name,
+        whisper_model=args.whisper_model,
         batch_size=args.batch_size,
         device=args.device,
         stemming=args.stemming,
