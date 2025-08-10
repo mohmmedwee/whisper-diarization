@@ -1,6 +1,9 @@
 fastapi
 uvicorn[standard]
 python-multipart
+pydantic
+celery
+redis
 wget
 nemo_toolkit[asr]==2.0.0rc0
 nltk
