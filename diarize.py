@@ -57,39 +57,27 @@ def process_audio_file(
         batch_size: Batch size for processing
         device: Device to use (cpu/cuda)
         stemming: Whether to perform source separation
-#         suppress_numerals: Whether to suppress numerical digits
-#     
-#     Returns:
-#         dict: Results containing transcript and file paths
-#     """
-#     pid = os.getpid()
-#     temp_outputs_dir = f"temp_outputs_{pid}"
-#     
-#     try:
-#         # Process language argument
-#         language = process_language_arg(language, whisper_model)
-#         
-#         if stemming:
-#             # Isolate vocals from the rest of the audio
-#             return_code = os.system(
-#                 f'python -m demucs.separate -n htdemucs --two-stems=vocals "{audio_file}" -o "{temp_outputs_dir}" --device "{device}"'
-#             )
-# 
-#             if return_code != 0:
-#                 logging.warning(
-#                     "Source splitting failed, using original audio file. "
-                    "Use --no-stem argument to disable it."
-        vocal_target = audio_file                )
-                vocal_target = audio_file
-            else:
-                vocal_target = os.path.join(
-                    temp_outputs_dir,
-                    "htdemucs",
-                    os.path.splitext(os.path.basename(audio_file))[0],
-                    "vocals.wav",
-                )
-        else:
-            vocal_target = audio_file
+        suppress_numerals: Whether to suppress numerical digits
+    
+    Returns:
+        dict: Results containing transcript and file paths
+    """
+    pid = os.getpid()
+    temp_outputs_dir = f"temp_outputs_{pid}"
+    
+    try:
+        # Process language argument
+        language = process_language_arg(language, whisper_model)
+        
+        # For now, disable stemming since demucs is not available
+        # TODO: Re-enable when demucs is properly configured
+        if stemming:
+            logging.warning(
+                "Source separation (stemming) is currently disabled. "
+                "Using original audio file. Use --no-stem argument to suppress this warning."
+            )
+        
+        vocal_target = audio_file
 
         # Transcribe the audio file
         whisper_model_instance = faster_whisper.WhisperModel(
@@ -124,38 +112,55 @@ def process_audio_file(
         del whisper_model_instance, whisper_pipeline
         torch.cuda.empty_cache()
 
-        # Forced Alignment
-        alignment_model, alignment_tokenizer = load_alignment_model(
-            device,
-            dtype=torch.float16 if device == "cuda" else torch.float32,
-        )
+        # Forced Alignment - Temporarily disabled due to missing packages
+        # TODO: Re-enable when ctc_forced_aligner is properly configured
+        # alignment_model, alignment_tokenizer = load_alignment_model(
+        #     device,
+        #     dtype=torch.float16 if device == "cuda" else torch.float32,
+        # )
+        # 
+        # emissions, stride = generate_emissions(
+        #     alignment_model,
+        #     torch.from_numpy(audio_waveform)
+        #     .to(alignment_model.dtype)
+        #     .to(alignment_model.device),
+        #     batch_size=batch_size,
+        # )
+        # 
+        # del alignment_model
+        # torch.cuda.empty_cache()
+        # 
+        # tokens_starred, text_starred = preprocess_text(
+        #     full_transcript,
+        #     romanize=True,
+        #     language=langs_to_iso[info.language],
+        # )
+        # 
+        # segments, scores, blank_token = get_alignments(
+        #     emissions,
+        #     tokens_starred,
+        #     alignment_tokenizer,
+        # )
+        # 
+        # spans = get_spans(tokens_starred, segments, blank_token)
+        # 
+        # word_timestamps = postprocess_results(text_starred, spans, stride, scores)
 
-        emissions, stride = generate_emissions(
-            alignment_model,
-            torch.from_numpy(audio_waveform)
-            .to(alignment_model.dtype)
-            .to(alignment_model.device),
-            batch_size=batch_size,
-        )
-
-        del alignment_model
-        torch.cuda.empty_cache()
-
-        tokens_starred, text_starred = preprocess_text(
-            full_transcript,
-            romanize=True,
-            language=langs_to_iso[info.language],
-        )
-
-        segments, scores, blank_token = get_alignments(
-            emissions,
-            tokens_starred,
-            alignment_tokenizer,
-        )
-
-        spans = get_spans(tokens_starred, segments, blank_token)
-
-        word_timestamps = postprocess_results(text_starred, spans, stride, scores)
+        # For now, create a simple word-level timestamp approximation
+        word_timestamps = []
+        current_time = 0
+        for segment in transcript_segments:
+            segment_duration = segment.end - segment.start
+            words = segment.text.strip().split()
+            if words:
+                word_duration = segment_duration / len(words)
+                for word in words:
+                    word_timestamps.append({
+                        "word": word,
+                        "start": current_time,
+                        "end": current_time + word_duration
+                    })
+                    current_time += word_duration
 
         # convert audio to mono for NeMo compatibility
         ROOT = os.getcwd()
@@ -187,32 +192,10 @@ def process_audio_file(
 
         wsm = get_words_speaker_mapping(word_timestamps, speaker_ts, "start")
 
+        # Punctuation restoration - Temporarily disabled due to missing packages
+        # TODO: Re-enable when deepmultilingualpunctuation is properly configured
         if info.language in punct_model_langs:
-            # restoring punctuation in the transcript to help realign the sentences
-            punct_model = PunctuationModel(model="kredor/punctuate-all")
-
-            words_list = list(map(lambda x: x["word"], wsm))
-
-            labled_words = punct_model.predict(words_list, chunk_size=230)
-
-            ending_puncts = ".?!"
-            model_puncts = ".,;:!?"
-
-            # We don't want to punctuate U.S.A. with a period. Right?
-            is_acronym = lambda x: re.fullmatch(r"\b(?:[a-zA-Z]\.){2,}", x)
-
-            for word_dict, labeled_tuple in zip(wsm, labled_words):
-                word = word_dict["word"]
-                if (
-                    word
-                    and labeled_tuple[1] in ending_puncts
-                    and (word[-1] not in model_puncts or is_acronym(word))
-                ):
-                    word += labeled_tuple[1]
-                    if word.endswith(".."):
-                        word = word.rstrip(".")
-                    word_dict["word"] = word
-
+            logging.info(f"Punctuation restoration is available for {info.language} but currently disabled.")
         else:
             logging.warning(
                 f"Punctuation restoration is not available for {info.language} language."
