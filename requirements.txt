@@ -1,8 +1,19 @@
-wget
-nemo_toolkit[asr]==2.0.0rc0
-nltk
-faster-whisper>=1.1.0
-git+https://github.com/MahmoudAshraf97/demucs.git
-git+https://github.com/oliverguhr/deepmultilingualpunctuation.git
-git+https://github.com/MahmoudAshraf97/ctc-forced-aligner.git
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+celery==5.3.4
+redis==5.0.1
+pydantic==2.5.0
+python-dotenv==1.0.0
+aiofiles==23.2.1
+faster-whisper==0.10.0
+torch==2.1.1
+torchaudio==2.1.1
+nemo-toolkit[asr]==1.20.1
+ctc-forced-aligner==1.0.0
+deepmultilingualpunctuation==1.0.0
+demucs==4.0.0
+nltk==3.8.1
+omegaconf==2.3.0
+wget==3.2
 

@@ -1,0 +1,279 @@
+import os
+import uuid
+import logging
+from typing import Optional, List
+from pathlib import Path
+
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import uvicorn
+from celery import Celery
+
+from diarize import process_audio_file
+from helpers import cleanup
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize FastAPI app
+app = FastAPI(
+    title="Whisper Diarization API",
+    description="API for audio transcription and speaker diarization using Whisper and NeMo",
+    version="1.0.0"
+)
+
+from config import settings
+
+# Celery configuration
+celery_app = Celery(
+    "whisper_diarization",
+    broker=settings.CELERY_BROKER_URL,
+    backend=settings.CELERY_RESULT_BACKEND
+)
+
+# Pydantic models
+class DiarizationRequest(BaseModel):
+    audio_file: str
+    language: Optional[str] = None
+    whisper_model: str = "medium.en"
+    batch_size: int = 8
+    device: str = "cpu"
+    stemming: bool = True
+    suppress_numerals: bool = False
+
+class DiarizationResponse(BaseModel):
+    task_id: str
+    status: str
+    message: str
+
+class TaskStatus(BaseModel):
+    task_id: str
+    status: str
+    result: Optional[dict] = None
+    error: Optional[str] = None
+
+# Storage for task results (in production, use Redis or database)
+task_results = {}
+
+@celery_app.task(bind=True)
+def process_audio_task(self, audio_file_path: str, output_dir: str, **kwargs):
+    """Celery task for processing audio file"""
+    try:
+        self.update_state(state='PROGRESS', meta={'current': 0, 'total': 100, 'status': 'Starting processing...'})
+        
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Process the audio file
+        self.update_state(state='PROGRESS', meta={'current': 25, 'total': 100, 'status': 'Transcribing audio...'})
+        
+        # Call the diarization function
+        process_audio_file(audio_file_path, output_dir, **kwargs)
+        
+        self.update_state(state='PROGRESS', meta={'current': 75, 'total': 100, 'status': 'Generating outputs...'})
+        
+        # Generate output files
+        base_name = Path(audio_file_path).stem
+        txt_file = os.path.join(output_dir, f"{base_name}.txt")
+        srt_file = os.path.join(output_dir, f"{base_name}.srt")
+        
+        # Read results
+        transcript = ""
+        if os.path.exists(txt_file):
+            with open(txt_file, 'r', encoding='utf-8') as f:
+                transcript = f.read()
+        
+        self.update_state(state='SUCCESS', meta={
+            'current': 100,
+            'total': 100,
+            'status': 'Processing completed',
+            'result': {
+                'transcript': transcript,
+                'txt_file': txt_file,
+                'srt_file': srt_file,
+                'output_dir': output_dir
+            }
+        })
+        
+        return {
+            'transcript': transcript,
+            'txt_file': txt_file,
+            'srt_file': srt_file,
+            'output_dir': output_dir
+        }
+        
+    except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}")
+        self.update_state(state='FAILURE', meta={'error': str(e)})
+        raise
+
+@app.post("/upload", response_model=DiarizationResponse)
+async def upload_audio(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    language: Optional[str] = None,
+    whisper_model: str = "medium.en",
+    batch_size: int = 8,
+    device: str = "cpu",
+    stemming: bool = True,
+    suppress_numerals: bool = False
+):
+    """Upload audio file for diarization"""
+    
+    # Validate file type
+    if not file.content_type or not file.content_type.startswith('audio/'):
+        raise HTTPException(status_code=400, detail="File must be an audio file")
+    
+    # Create unique task ID
+    task_id = str(uuid.uuid4())
+    
+    # Create uploads directory
+    uploads_dir = Path("uploads")
+    uploads_dir.mkdir(exist_ok=True)
+    
+    # Save uploaded file
+    file_path = uploads_dir / f"{task_id}_{file.filename}"
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    
+    # Create output directory
+    output_dir = Path("outputs") / task_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Start background task
+    task = process_audio_task.delay(
+        str(file_path),
+        str(output_dir),
+        language=language,
+        whisper_model=whisper_model,
+        batch_size=batch_size,
+        device=device,
+        stemming=stemming,
+        suppress_numerals=suppress_numerals
+    )
+    
+    # Store task info
+    task_results[task_id] = {
+        'celery_task_id': task.id,
+        'status': 'PENDING',
+        'file_path': str(file_path),
+        'output_dir': str(output_dir)
+    }
+    
+    return DiarizationResponse(
+        task_id=task_id,
+        status="PENDING",
+        message="Audio file uploaded and processing started"
+    )
+
+@app.get("/status/{task_id}", response_model=TaskStatus)
+async def get_task_status(task_id: str):
+    """Get the status of a diarization task"""
+    
+    if task_id not in task_results:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task_info = task_results[task_id]
+    celery_task_id = task_info['celery_task_id']
+    
+    # Get Celery task status
+    task = celery_app.AsyncResult(celery_task_id)
+    
+    if task.state == 'PENDING':
+        status = 'PENDING'
+        result = None
+        error = None
+    elif task.state == 'PROGRESS':
+        status = 'PROCESSING'
+        result = task.info
+        error = None
+    elif task.state == 'SUCCESS':
+        status = 'COMPLETED'
+        result = task.result
+        error = None
+        # Update local status
+        task_results[task_id]['status'] = 'COMPLETED'
+    elif task.state == 'FAILURE':
+        status = 'FAILED'
+        result = None
+        error = str(task.info)
+        # Update local status
+        task_results[task_id]['status'] = 'FAILED'
+    else:
+        status = 'UNKNOWN'
+        result = None
+        error = None
+    
+    return TaskStatus(
+        task_id=task_id,
+        status=status,
+        result=result,
+        error=error
+    )
+
+@app.get("/download/{task_id}")
+async def download_results(task_id: str):
+    """Download the results of a completed task"""
+    
+    if task_id not in task_results:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task_info = task_results[task_id]
+    
+    if task_info['status'] != 'COMPLETED':
+        raise HTTPException(status_code=400, detail="Task not completed yet")
+    
+    output_dir = Path(task_info['output_dir'])
+    
+    # Check if output files exist
+    txt_files = list(output_dir.glob("*.txt"))
+    srt_files = list(output_dir.glob("*.srt"))
+    
+    if not txt_files and not srt_files:
+        raise HTTPException(status_code=404, detail="No output files found")
+    
+    # Return file paths for download
+    return {
+        "task_id": task_id,
+        "output_directory": str(output_dir),
+        "available_files": {
+            "txt_files": [str(f) for f in txt_files],
+            "srt_files": [str(f) for f in srt_files]
+        }
+    }
+
+@app.delete("/cleanup/{task_id}")
+async def cleanup_task(task_id: str):
+    """Clean up task files and results"""
+    
+    if task_id not in task_results:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task_info = task_results[task_id]
+    
+    try:
+        # Clean up files
+        if os.path.exists(task_info['file_path']):
+            os.remove(task_info['file_path'])
+        
+        if os.path.exists(task_info['output_dir']):
+            cleanup(task_info['output_dir'])
+        
+        # Remove task from memory
+        del task_results[task_id]
+        
+        return {"message": f"Task {task_id} cleaned up successfully"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error during cleanup: {str(e)}")
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "whisper-diarization-api"}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
