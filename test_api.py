@@ -187,5 +187,106 @@ def main():
     
     print("\nTest completed!")
 
+def test_models():
+    """Test the models endpoint"""
+    print("Testing models endpoint...")
+    
+    try:
+        response = requests.get(f"{API_BASE}/models")
+        
+        if response.status_code == 200:
+            models_data = response.json()
+            print("✓ Models endpoint successful")
+            print(f"  Available models: {len(models_data['available_models'])}")
+            print(f"  Multilingual models: {len(models_data['multilingual_models'])}")
+            print(f"  English models: {len(models_data['english_models'])}")
+            print(f"  Default model: {models_data['default_model']}")
+            return models_data
+        else:
+            print(f"✗ Models endpoint failed: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"✗ Models endpoint error: {str(e)}")
+        return None
+
+def test_model_info(model_name):
+    """Test the specific model info endpoint"""
+    print(f"Testing model info for {model_name}...")
+    
+    try:
+        response = requests.get(f"{API_BASE}/models/{model_name}")
+        
+        if response.status_code == 200:
+            model_data = response.json()
+            print(f"✓ Model info successful for {model_name}")
+            print(f"  Size: {model_data['info']['size']}")
+            print(f"  Parameters: {model_data['info']['parameters']}")
+            print(f"  Accuracy: {model_data['info']['accuracy']}")
+            print(f"  Speed: {model_data['info']['speed']}")
+            return model_data
+        else:
+            print(f"✗ Model info failed: {response.status_code} - {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"✗ Model info error: {str(e)}")
+        return None
+
+def test_model_recommendations():
+    """Test the model recommendations endpoint"""
+    print("Testing model recommendations...")
+    
+    try:
+        # Test different recommendation scenarios
+        test_cases = [
+            {"accuracy": "Good", "speed": "Medium"},
+            {"multilingual": True, "max_size_mb": 500},
+            {"speed": "Fast", "max_size_mb": 100}
+        ]
+        
+        for i, criteria in enumerate(test_cases, 1):
+            print(f"  Test case {i}: {criteria}")
+            response = requests.get(f"{API_BASE}/models/recommend", params=criteria)
+            
+            if response.status_code == 200:
+                rec_data = response.json()
+                print(f"    ✓ Found {rec_data['total_found']} recommendations")
+                for rec in rec_data['recommendations'][:3]:  # Show first 3
+                    print(f"      - {rec['model_name']}: {rec['info']['size']}, {rec['info']['accuracy']}")
+            else:
+                print(f"    ✗ Failed: {response.status_code}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"✗ Model recommendations error: {str(e)}")
+        return False
+
+def test_all_model_endpoints():
+    """Test all model-related endpoints"""
+    print("\n" + "=" * 50)
+    print("Testing Model Endpoints")
+    print("=" * 50)
+    
+    # Test models list
+    models_data = test_models()
+    if not models_data:
+        print("Models endpoint test failed. Skipping other model tests.")
+        return
+    
+    # Test specific model info
+    if models_data['available_models']:
+        test_model = models_data['available_models'][0]
+        test_model_info(test_model)
+    
+    # Test recommendations
+    test_model_recommendations()
+    
+    print("Model endpoints testing completed!")
+
 if __name__ == "__main__":
     main()
+    
+    # Uncomment the line below to test model endpoints separately
+    # test_all_model_endpoints()
