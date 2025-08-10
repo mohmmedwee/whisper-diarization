@@ -45,7 +45,7 @@ RUN apt-get update && apt-get install -y \
 
 # Create symbolic link for python
 RUN ln -s /usr/bin/python3.10 /usr/bin/python
-RUN pip install --no-cache-dir Cython
+RUN pip install --no-cache-dir Cython numpy
 # Set working directory
 WORKDIR /app
 
