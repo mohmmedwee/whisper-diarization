@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-# Install system dependencies
+# Install system dependencies and clean up cache in a single RUN command
 RUN apt-get update && apt-get install -y \
     python3.10 \
     python3.10-dev \
@@ -22,22 +22,25 @@ RUN apt-get update && apt-get install -y \
     portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip and setuptools for better dependency management
-RUN python3.10 -m pip install --upgrade pip setuptools
+# Upgrade pip and setuptools
+RUN python3.10 -m pip install --no-cache-dir --upgrade pip setuptools
+
+# Install Cython first for building dependencies
+RUN pip install --no-cache-dir Cython
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
+# Copy requirements file first to leverage Docker cache
 COPY requirements.txt .
 
-# Install PyTorch first (CUDA version)
+# Install PyTorch with CUDA version and other dependencies
 RUN pip install --no-cache-dir \
     torch==2.1.1+cu121 \
     torchaudio==2.1.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install other Python dependencies
+# Install the rest of the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Download NLTK data
@@ -46,15 +49,12 @@ RUN python3.10 -c "import nltk; nltk.download('punkt')"
 # Copy application code
 COPY . .
 
-# Create necessary directories
+# Create necessary directories for uploads and outputs
 RUN mkdir -p uploads outputs temp_outputs
 
-# Expose port
-EXPOSE 8000
-
-# Health check
+# Health check to ensure application is running
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application
+# Run the application with Uvicorn
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
