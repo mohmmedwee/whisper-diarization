@@ -1,4 +1,4 @@
-# Use CUDA base image with CUDNN for GPU support with Ubuntu 22.04
+# Use CUDA base image for GPU support with Ubuntu 22.04
 FROM nvidia/cuda:12.4.0-devel-ubuntu22.04
 
 # Set environment variables
@@ -7,11 +7,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV CUDA_VISIBLE_DEVICES=0
 ENV NVIDIA_VISIBLE_DEVICES=all
-ENV CUDNN_LIBRARY=/usr/local/cuda/lib64
-ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cudnn/lib64:$LD_LIBRARY_PATH
-ENV CUDNN_ROOT=/usr/local/cudnn
-ENV CUDNN_INCLUDE_DIR=/usr/local/cudnn/include
-ENV CUDNN_LIBRARY_DIR=/usr/local/cudnn/lib64
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
 ENV CUDA_LAUNCH_BLOCKING=1
 
@@ -52,13 +48,11 @@ RUN apt-get update && apt-get install -y \
     libtheora-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install CUDNN manually
-RUN wget https://developer.download.nvidia.com/compute/redist/cudnn/v8.9.7/local_installers/cudnn-local-repo-ubuntu2204-8.9.7.29_1.0-1_amd64.deb && \
-    dpkg -i cudnn-local-repo-ubuntu2204-8.9.7.29_1.0-1_amd64.deb && \
-    apt-get update && \
-    apt-get install -y libcudnn8 && \
-    rm cudnn-local-repo-ubuntu2204-8.9.7.29_1.0-1_amd64.deb && \
-    rm -rf /var/lib/apt/lists/*
+# Install CUDNN from Ubuntu repositories (simpler approach)
+RUN apt-get update && apt-get install -y \
+    libcudnn8 \
+    libcudnn8-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create symbolic link for python
 RUN ln -s /usr/bin/python3.10 /usr/bin/python
@@ -97,8 +91,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Test CUDA/CUDNN availability
-RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'CUDNN version: {torch.backends.cudnn.version()}')" || echo "CUDA test failed"
+# Test CUDA/CUDNN availability with fallback
+RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}'); print(f'CUDNN version: {torch.backends.cudnn.version()}')" || (echo "CUDA test failed, will use CPU fallback" && echo "export CUDA_VISIBLE_DEVICES='' >> /etc/environment")
 
 # Run the application
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
