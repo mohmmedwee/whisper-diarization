@@ -39,7 +39,7 @@ def test_upload(audio_file_path):
             files = {'file': f}
             data = {
                 'language': 'en',
-                'whisper_model': 'tiny.en',  # Use tiny model for faster testing
+                'whisper_model': 'large-v3',  # Use latest and best model
                 'device': 'cpu'
             }
             

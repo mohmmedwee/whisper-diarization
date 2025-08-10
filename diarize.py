@@ -49,7 +49,7 @@ def process_audio_file(
     audio_file: str,
     output_dir: str,
     language: str = None,
-    whisper_model: str = "medium.en",
+    whisper_model: str = "large-v3",
     batch_size: int = 8,
     device: str = "cpu",
     stemming: bool = True,

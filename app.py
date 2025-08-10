@@ -37,7 +37,7 @@ celery_app = Celery(
 class DiarizationRequest(BaseModel):
     audio_file: str
     language: Optional[str] = None
-    whisper_model: str = "medium.en"
+    whisper_model: str = "large-v3"     
     batch_size: int = 8
     device: str = "cpu"
     stemming: bool = True
@@ -114,7 +114,7 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     language: Optional[str] = None,
-    whisper_model: str = "medium.en",
+    whisper_model: str = "large-v3",
     batch_size: int = 8,
     device: str = "cpu",
     stemming: bool = True,

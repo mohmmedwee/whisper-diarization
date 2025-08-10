@@ -23,7 +23,7 @@ class Settings:
     MAX_FILE_SIZE: str = os.getenv("MAX_FILE_SIZE", "100MB")
     
     # Model Configuration
-    DEFAULT_WHISPER_MODEL: str = os.getenv("DEFAULT_WHISPER_MODEL", "medium.en")
+    DEFAULT_WHISPER_MODEL: str = os.getenv("DEFAULT_WHISPER_MODEL", "large-v3")
     DEFAULT_BATCH_SIZE: int = int(os.getenv("DEFAULT_BATCH_SIZE", "8"))
     DEFAULT_DEVICE: str = os.getenv("DEFAULT_DEVICE", "cpu")
     
@@ -145,6 +145,17 @@ class Settings:
             "recommended_use": "English-only, maximum accuracy",
             "accuracy": "Very High",
             "speed": "Very Slow"
+        },
+        
+        # XLarge models (maximum accuracy)
+        "xlarge": {
+            "size": "3100 MB",
+            "parameters": "3100M",
+            "multilingual": True,
+            "languages": ["multilingual"],
+            "recommended_use": "Maximum accuracy, research, professional use",
+            "accuracy": "Maximum",
+            "speed": "Extremely Slow"
         }
     }
     
