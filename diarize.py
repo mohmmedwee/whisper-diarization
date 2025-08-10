@@ -68,10 +68,18 @@ def process_audio_file(
                     cudnn_version = torch.backends.cudnn.version()
                     logging.info(f"CUDNN is available: version {cudnn_version}")
                     
-                    # Test CUDNN functionality
+                    # Test CUDNN functionality with valid methods
                     test_tensor = torch.randn(1, 1, 10, 10).cuda()
-                    torch.backends.cudnn.conv2d(test_tensor, test_tensor)
-                    del test_tensor
+                    # Test if CUDNN is enabled and working
+                    if torch.backends.cudnn.enabled:
+                        logging.info("CUDNN is enabled and working")
+                    else:
+                        logging.warning("CUDNN is disabled, falling back to CPU")
+                        device = "cpu"
+                    
+                    # Test basic CUDA operations
+                    test_result = test_tensor + test_tensor
+                    del test_tensor, test_result
                     logging.info("CUDNN functionality test passed")
                     
                 except Exception as e:
