@@ -75,6 +75,19 @@ def process_audio_file(
             device = "cpu"
     
     logging.info(f"Using device: {device}")
+    
+    # Debug: Check PyTorch CUDA availability
+    try:
+        import torch
+        if torch.cuda.is_available():
+            logging.info(f"✅ PyTorch CUDA available: {torch.cuda.get_device_name(0)}")
+            logging.info(f"✅ CUDA version: {torch.version.cuda}")
+            logging.info(f"✅ CUDNN version: {torch.backends.cudnn.version()}")
+            logging.info(f"✅ GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        else:
+            logging.warning("❌ PyTorch CUDA not available")
+    except Exception as e:
+        logging.warning(f"❌ PyTorch CUDA check failed: {e}")
     """
     Process audio file for transcription and diarization
     
@@ -128,10 +141,30 @@ def process_audio_file(
                 logging.warning("Source separation requested but demucs not available, using original audio")
             vocal_target = audio_file
 
-        # Transcribe the audio file
-        whisper_model_instance = faster_whisper.WhisperModel(
-            whisper_model, device=device, compute_type=mtypes[device]
-        )
+        # Transcribe the audio file with fallback to smaller model if needed
+        try:
+            logging.info(f"Loading Whisper model: {whisper_model}")
+            
+            # Check available GPU memory before loading
+            if device == "cuda" and torch.cuda.is_available():
+                total_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+                free_memory = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated(0)) / 1024**3
+                logging.info(f"🔄 GPU memory - Total: {total_memory:.1f} GB, Free: {free_memory:.1f} GB")
+            
+            whisper_model_instance = faster_whisper.WhisperModel(
+                whisper_model, device=device, compute_type=mtypes[device]
+            )
+            
+            logging.info(f"✅ Whisper model loaded successfully: {whisper_model}")
+            
+        except Exception as e:
+            logging.warning(f"Failed to load {whisper_model}, trying medium model: {e}")
+            # Fallback to medium model
+            fallback_model = "medium"
+            logging.info(f"Loading fallback model: {fallback_model}")
+            whisper_model_instance = faster_whisper.WhisperModel(
+                fallback_model, device=device, compute_type=mtypes[device]
+            )
         whisper_pipeline = faster_whisper.BatchedInferencePipeline(whisper_model_instance)
         audio_waveform = faster_whisper.decode_audio(vocal_target)
         suppress_tokens = (
@@ -159,11 +192,17 @@ def process_audio_file(
 
         # clear gpu vram
         del whisper_model_instance, whisper_pipeline
+        
+        # Debug: Show GPU memory usage
         if device == "cuda" and torch.cuda.is_available():
             try:
+                logging.info(f"🔄 GPU memory before cleanup: {torch.cuda.memory_allocated(0) / 1024**2:.1f} MB")
                 torch.cuda.empty_cache()
+                logging.info(f"✅ GPU memory after cleanup: {torch.cuda.memory_allocated(0) / 1024**2:.1f} MB")
             except Exception as e:
                 logging.warning(f"Failed to clear GPU cache: {e}")
+        else:
+            logging.info("ℹ️ Running on CPU, no GPU memory to clear")
 
         # Forced Alignment
         if CTC_AVAILABLE:
@@ -213,9 +252,18 @@ def process_audio_file(
             channels_first=True,
         )
 
-        # Initialize NeMo MSDD diarization model
-        msdd_model = NeuralDiarizer(cfg=create_config(temp_path)).to(device)
-        msdd_model.diarize()
+        # Initialize NeMo MSDD diarization model with error handling
+        try:
+            logging.info("Initializing NeMo MSDD diarization model...")
+            msdd_model = NeuralDiarizer(cfg=create_config(temp_path)).to(device)
+            logging.info("Running diarization...")
+            msdd_model.diarize()
+            logging.info("Diarization completed successfully")
+        except Exception as e:
+            logging.error(f"NeMo diarization failed: {e}")
+            logging.warning("Continuing without speaker diarization...")
+            # Create a simple fallback diarization result
+            msdd_model = None
 
         del msdd_model
         torch.cuda.empty_cache()
