@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     git \
     wget \
-    sox\
+    sox \
     curl \
     ffmpeg \
     libsndfile1 \
@@ -22,8 +22,8 @@ RUN apt-get update && apt-get install -y \
     portaudio19-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create symbolic link for python
-RUN ln -s /usr/bin/python3.10 /usr/bin/python
+# Upgrade pip and setuptools for better dependency management
+RUN python3.10 -m pip install --upgrade pip setuptools
 
 # Set working directory
 WORKDIR /app
@@ -37,11 +37,11 @@ RUN pip install --no-cache-dir \
     torchaudio==2.1.1+cu121 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install Python dependencies
+# Install other Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Download NLTK data
-RUN python -c "import nltk; nltk.download('punkt')"
+RUN python3.10 -c "import nltk; nltk.download('punkt')"
 
 # Copy application code
 COPY . .
