@@ -59,9 +59,6 @@ celery_app.conf.update(
 class DiarizationRequest(BaseModel):
     audio_file: str
     language: Optional[str] = None
-    whisper_model: str = "large-v3"     
-    batch_size: int = 8
-    device: str = "cuda"
     stemming: bool = True
     suppress_numerals: bool = False
 
@@ -137,9 +134,6 @@ async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     language: Optional[str] = None,
-    whisper_model: str = "large-v3",
-    batch_size: int = 8,
-    device: str = "cuda",
     stemming: bool = True,
     suppress_numerals: bool = False
 ):
@@ -166,14 +160,14 @@ async def upload_audio(
     output_dir = Path("outputs") / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Start background task
+    # Start background task with default values for hidden parameters
     task = process_audio_task.delay(
         str(file_path),
         str(output_dir),
         language=language,
-        whisper_model=whisper_model,
-        batch_size=batch_size,
-        device=device,
+        whisper_model="large-v3",  # Default value
+        batch_size=8,               # Default value
+        device="cuda",              # Default value
         stemming=stemming,
         suppress_numerals=suppress_numerals
     )
