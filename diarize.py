@@ -7,6 +7,7 @@ import faster_whisper
 import torch
 import torchaudio
 
+# Removed problematic imports - these packages are not available in the current environment
 # from ctc_forced_aligner import (
 #     generate_emissions,
 #     get_alignments,
@@ -205,32 +206,34 @@ def process_audio_file(
         wsm = get_realigned_ws_mapping_with_punctuation(wsm)
         ssm = get_sentences_speaker_mapping(wsm, speaker_ts)
 
-        # Save results to output directory
-        base_name = os.path.splitext(os.path.basename(audio_file))[0]
-        txt_file = os.path.join(output_dir, f"{base_name}.txt")
-        srt_file = os.path.join(output_dir, f"{base_name}.srt")
-
-        with open(txt_file, "w", encoding="utf-8-sig") as f:
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Save results
+        output_txt = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(audio_file))[0]}.txt")
+        output_srt = os.path.join(output_dir, f"{os.path.splitext(os.path.basename(audio_file))[0]}.srt")
+        
+        with open(output_txt, "w", encoding="utf-8-sig") as f:
             get_speaker_aware_transcript(ssm, f)
 
-        with open(srt_file, "w", encoding="utf-8-sig") as srt:
+        with open(output_srt, "w", encoding="utf-8-sig") as srt:
             write_srt(ssm, srt)
 
-        # Clean up temporary files
         cleanup(temp_path)
-
+        
         return {
-            'transcript_file': txt_file,
-            'srt_file': srt_file,
-            'language': info.language,
-            'duration': info.duration
+            "transcript": full_transcript,
+            "output_dir": output_dir,
+            "txt_file": output_txt,
+            "srt_file": output_srt,
+            "language": info.language
         }
-
+        
     except Exception as e:
-        # Clean up on error
+        logging.error(f"Error processing audio file: {str(e)}")
         if 'temp_path' in locals():
             cleanup(temp_path)
-        raise e
+        raise
 
 def main():
     """Main function for command-line usage"""
@@ -244,7 +247,7 @@ def main():
         action="store_false",
         dest="stemming",
         default=True,
-        help="Disables source separation."
+        help="Disables source separation. "
         "This helps with long files that don't contain a lot of music.",
     )
 
@@ -253,7 +256,7 @@ def main():
         action="store_true",
         dest="suppress_numerals",
         default=False,
-        help="Suppresses Numerical Digits."
+        help="Suppresses Numerical Digits. "
         "This helps the diarization accuracy but converts all digits into written text.",
     )
 
@@ -313,9 +316,10 @@ def main():
         suppress_numerals=args.suppress_numerals
     )
     
-    print(f"Processing completed. Results saved to: {output_dir}")
-    print(f"Transcript: {result['transcript_file']}")
-    print(f"SRT: {result['srt_file']}")
+    print(f"Processing completed successfully!")
+    print(f"Output files saved to: {output_dir}")
+    print(f"Transcript: {result['txt_file']}")
+    print(f"Subtitles: {result['srt_file']}")
 
 if __name__ == "__main__":
     main()
