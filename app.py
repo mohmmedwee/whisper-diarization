@@ -22,8 +22,14 @@ from config import settings
 # Initialize FastAPI app
 app = FastAPI(
     title="Whisper Diarization API",
-    description="API for audio transcription and speaker diarization using Whisper and NeMo",
-    version="1.0.0"
+    description="API for audio transcription and speaker diarization using Whisper and NeMo. Advanced parameters are automatically configured for optimal performance.",
+    version="1.0.0",
+    openapi_tags=[
+        {
+            "name": "Audio Processing",
+            "description": "Upload and process audio files for transcription and diarization"
+        }
+    ]
 )
 
 # Celery configuration
@@ -131,7 +137,7 @@ def process_audio_task(self, audio_file_path: str, output_dir: str, **kwargs):
 
 @app.post("/upload", response_model=DiarizationResponse, 
           summary="Upload Audio for Diarization",
-          description="Upload an audio file to start the transcription and speaker diarization process. The system will automatically use optimal settings for best performance.")
+          description="Upload an audio file to start the transcription and speaker diarization process. Advanced settings (model, batch size, device) are automatically configured for optimal performance and are not exposed in the API.")
 async def upload_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Audio file to process (MP3, WAV, etc.)"),
