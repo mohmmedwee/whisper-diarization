@@ -17,14 +17,14 @@ from helpers import cleanup
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from config import settings
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Whisper Diarization API",
     description="API for audio transcription and speaker diarization using Whisper and NeMo",
     version="1.0.0"
 )
-
-from config import settings
 
 # Celery configuration
 celery_app = Celery(
