@@ -63,10 +63,17 @@ def process_audio_file(
                 logging.warning("CUDA not available, falling back to CPU")
                 device = "cpu"
             else:
-                # Test CUDNN
+                # Test CUDNN more thoroughly
                 try:
-                    torch.backends.cudnn.version()
-                    logging.info("CUDNN is available")
+                    cudnn_version = torch.backends.cudnn.version()
+                    logging.info(f"CUDNN is available: version {cudnn_version}")
+                    
+                    # Test CUDNN functionality
+                    test_tensor = torch.randn(1, 1, 10, 10).cuda()
+                    torch.backends.cudnn.conv2d(test_tensor, test_tensor)
+                    del test_tensor
+                    logging.info("CUDNN functionality test passed")
+                    
                 except Exception as e:
                     logging.warning(f"CUDNN error: {e}, falling back to CPU")
                     device = "cpu"
@@ -165,22 +172,53 @@ def process_audio_file(
             whisper_model_instance = faster_whisper.WhisperModel(
                 fallback_model, device=device, compute_type=mtypes[device]
             )
-        whisper_pipeline = faster_whisper.BatchedInferencePipeline(whisper_model_instance)
-        audio_waveform = faster_whisper.decode_audio(vocal_target)
-        suppress_tokens = (
-            find_numeral_symbol_tokens(whisper_model_instance.hf_tokenizer)
-            if suppress_numerals
-            else [-1]
-        )
-
-        if batch_size > 0:
-            transcript_segments, info = whisper_pipeline.transcribe(
-                audio_waveform,
-                language,
-                suppress_tokens=suppress_tokens,
-                batch_size=batch_size,
+        # Create Whisper pipeline with error handling
+        try:
+            whisper_pipeline = faster_whisper.BatchedInferencePipeline(whisper_model_instance)
+            logging.info("✅ Whisper pipeline created successfully")
+        except Exception as e:
+            logging.warning(f"Failed to create batched pipeline: {e}, using single inference")
+            whisper_pipeline = None
+        
+        # Decode audio
+        try:
+            audio_waveform = faster_whisper.decode_audio(vocal_target)
+            logging.info(f"✅ Audio decoded successfully, shape: {audio_waveform.shape}")
+        except Exception as e:
+            logging.error(f"Audio decoding failed: {e}")
+            raise
+        
+        # Get suppress tokens
+        try:
+            suppress_tokens = (
+                find_numeral_symbol_tokens(whisper_model_instance.hf_tokenizer)
+                if suppress_numerals
+                else [-1]
             )
+        except Exception as e:
+            logging.warning(f"Failed to get suppress tokens: {e}, using default")
+            suppress_tokens = [-1]
+
+        # Transcribe with fallback logic
+        if batch_size > 0 and whisper_pipeline is not None:
+            try:
+                logging.info(f"Using batched inference with batch_size={batch_size}")
+                transcript_segments, info = whisper_pipeline.transcribe(
+                    audio_waveform,
+                    language,
+                    suppress_tokens=suppress_tokens,
+                    batch_size=batch_size,
+                )
+            except Exception as e:
+                logging.warning(f"Batched inference failed: {e}, falling back to single inference")
+                transcript_segments, info = whisper_model_instance.transcribe(
+                    audio_waveform,
+                    language,
+                    suppress_tokens=suppress_tokens,
+                    vad_filter=True,
+                )
         else:
+            logging.info("Using single inference (no batching)")
             transcript_segments, info = whisper_model_instance.transcribe(
                 audio_waveform,
                 language,
@@ -191,7 +229,13 @@ def process_audio_file(
         full_transcript = "".join(segment.text for segment in transcript_segments)
 
         # clear gpu vram
-        del whisper_model_instance, whisper_pipeline
+        try:
+            if whisper_pipeline is not None:
+                del whisper_pipeline
+            del whisper_model_instance
+            logging.info("✅ Whisper models cleaned up")
+        except Exception as e:
+            logging.warning(f"Error during model cleanup: {e}")
         
         # Debug: Show GPU memory usage
         if device == "cuda" and torch.cuda.is_available():
