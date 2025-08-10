@@ -53,9 +53,11 @@ WORKDIR /app
 COPY requirements.txt .
 COPY constraints.txt .
 
+# Install critical dependencies first
+RUN pip install --no-cache-dir typing_extensions
+
 # Install Python dependencies
-#RUN pip install --no-cache-dir -r requirements.txt
- RUN pip install -c constraints.txt -r requirements.txt
+RUN pip install -c constraints.txt -r requirements.txt
 
 # Download NLTK data
 RUN python -c "import nltk; nltk.download('punkt')"
